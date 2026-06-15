@@ -227,10 +227,10 @@
       </div>
 
       <div class="stat-grid">
-        <div class="stat"><div class="k">Return to player</div><div class="v">85%</div><div class="sub">850 won per 1,000 wagered</div></div>
         <div class="stat"><div class="k">Net burn / spin</div><div class="v">150</div><div class="sub">coins lost on average</div></div>
         <div class="stat"><div class="k">Avg leftover &nbsp;E[B]</div><div class="v" id="leftover">—</div><div class="sub">stranded at game end</div></div>
         <div class="stat"><div class="k">Std dev of spins</div><div class="v" id="sd">—</div><div class="sub">spread across sessions</div></div>
+        <div class="stat"><div class="k">Min-spin busts</div><div class="v" id="minbust">—</div><div class="sub" id="minbustsub">fewest possible, all losses</div></div>
         <div class="stat"><div class="k">Price per spin</div><div class="v gold" id="pps">—</div><div class="sub" id="ppssub">$1.99 ÷ avg spins</div></div>
         <div class="stat"><div class="k">Spins per 1,000 coins</div><div class="v" id="sp1k">—</div><div class="sub">ceiling 6.67</div></div>
       </div>
@@ -268,6 +268,7 @@
   var balanceEl=$("balance"), feedbackEl=$("feedback"), spinBtn=$("spin"), buyBtn=$("buy"),
       curEl=$("curspins"), maxEl=$("maxspins"), avgEl=$("avg"), pmEl=$("pm"), gamesEl=$("games"),
       leftEl=$("leftover"), sdEl=$("sd"), ppsEl=$("pps"), ppssubEl=$("ppssub"), sp1kEl=$("sp1k"),
+      minbustEl=$("minbust"), minbustsubEl=$("minbustsub"),
       ptagEl=$("ptag"), hlpriceEl=$("hlprice"),
       coinsInEl=$("coinsIn"), spdEl=$("spd"), spdrefEl=$("spdref"),
       pctSliderEl=$("pctSlider"), pctLabelEl=$("pctLabel"), pctValEl=$("pctVal"),
@@ -395,7 +396,7 @@
   function render(){
     gamesEl.textContent=fmt(games);
     maxEl.textContent=maxSpins;
-    if(games===0){avgEl.textContent="—";pmEl.textContent="";leftEl.textContent="—";sdEl.textContent="—";ppsEl.textContent="—";sp1kEl.textContent="—";spdEl.textContent="—";spdrefEl.textContent="";pctMedianEl.textContent="—";pctMeanEl.textContent="—";pctValEl.textContent="—";pctNoteEl.textContent="";drawConv();drawHist();return;}
+    if(games===0){avgEl.textContent="—";pmEl.textContent="";leftEl.textContent="—";sdEl.textContent="—";minbustEl.textContent="—";minbustEl.className="v";ppsEl.textContent="—";sp1kEl.textContent="—";spdEl.textContent="—";spdrefEl.textContent="";pctMedianEl.textContent="—";pctMeanEl.textContent="—";pctValEl.textContent="—";pctNoteEl.textContent="";drawConv();drawHist();return;}
     var avg=totalSpins/games;
     var lo=totalLeftover/games;
     avgEl.textContent=avg.toFixed(2);
@@ -403,6 +404,11 @@
     // unit economics
     ppsEl.textContent="$"+(parseFloat(price)/avg).toFixed(3);
     sp1kEl.textContent=(avg/(start/1000)).toFixed(2);
+    // share that busts in the fewest possible spins (all losses)
+    var minSp=Math.floor(start/1000);
+    var mb=(histo[minSp]||0)/games*100;
+    minbustEl.textContent=mb.toFixed(1)+"%";
+    minbustEl.className=mb>=5?"v bad":"v";
     // standard deviation of sessions and 95% CI of the mean
     if(games>1){
       var variance=(totalSpinsSq - totalSpins*totalSpins/games)/(games-1);
@@ -539,6 +545,7 @@
     buyBtn.textContent="Buy "+fmt(start)+" coins · $"+price;
     hlpriceEl.textContent="$"+price;
     ppssubEl.textContent="$"+price+" ÷ avg spins";
+    minbustsubEl.textContent=Math.floor(start/1000)+" spins, all losses";
   }
 
   // ---- reset ----
