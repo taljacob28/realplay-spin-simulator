@@ -200,9 +200,9 @@
       <div class="auto">
         <span class="auto-label">Run sessions automatically</span>
         <div class="auto-btns">
-          <button data-n="100">Run 100</button>
           <button data-n="1000">Run 1,000</button>
           <button data-n="10000">Run 10,000</button>
+          <button data-n="100000">Run 100,000</button>
         </div>
       </div>
     </section>
@@ -229,10 +229,10 @@
       <div class="stat-grid">
         <div class="stat"><div class="k">Return to player</div><div class="v">85%</div><div class="sub">850 won per 1,000 wagered</div></div>
         <div class="stat"><div class="k">Net burn / spin</div><div class="v">150</div><div class="sub">coins lost on average</div></div>
-        <div class="stat"><div class="k">Analytical bound</div><div class="v gold" id="bound">15 – 20</div><div class="sub">from leftover ∈ {0..750}</div></div>
-        <div class="stat"><div class="k">Naïve estimate</div><div class="v bad" id="naive">20 ✗</div><div class="sub">assumes burn to exactly 0</div></div>
         <div class="stat"><div class="k">Avg leftover &nbsp;E[B]</div><div class="v" id="leftover">—</div><div class="sub">stranded at game end</div></div>
-        <div class="stat"><div class="k">Wald check</div><div class="v ok" id="wald">—</div><div class="sub" id="waldsub">(3,000 − E[B]) ÷ 150</div></div>
+        <div class="stat"><div class="k">Std dev of spins</div><div class="v" id="sd">—</div><div class="sub">spread across sessions</div></div>
+        <div class="stat"><div class="k">Price per spin</div><div class="v gold" id="pps">—</div><div class="sub" id="ppssub">$1.99 ÷ avg spins</div></div>
+        <div class="stat"><div class="k">Spins per 1,000 coins</div><div class="v" id="sp1k">—</div><div class="sub">ceiling 6.67</div></div>
       </div>
 
       <div class="chart-block">
@@ -267,9 +267,8 @@
   var $=function(id){return document.getElementById(id)};
   var balanceEl=$("balance"), feedbackEl=$("feedback"), spinBtn=$("spin"), buyBtn=$("buy"),
       curEl=$("curspins"), maxEl=$("maxspins"), avgEl=$("avg"), pmEl=$("pm"), gamesEl=$("games"),
-      leftEl=$("leftover"), waldEl=$("wald"),
-      ptagEl=$("ptag"), hlpriceEl=$("hlprice"), boundEl=$("bound"), naiveEl=$("naive"),
-      waldsubEl=$("waldsub"), lgnaiveEl=$("lgnaive"), lgbandEl=$("lgband"),
+      leftEl=$("leftover"), sdEl=$("sd"), ppsEl=$("pps"), ppssubEl=$("ppssub"), sp1kEl=$("sp1k"),
+      ptagEl=$("ptag"), hlpriceEl=$("hlprice"),
       coinsInEl=$("coinsIn"), spdEl=$("spd"), spdrefEl=$("spdref"),
       pctSliderEl=$("pctSlider"), pctLabelEl=$("pctLabel"), pctValEl=$("pctVal"),
       pctMedianEl=$("pctMedian"), pctMeanEl=$("pctMean"), pctNoteEl=$("pctNote"),
@@ -396,18 +395,21 @@
   function render(){
     gamesEl.textContent=fmt(games);
     maxEl.textContent=maxSpins;
-    if(games===0){avgEl.textContent="—";pmEl.textContent="";leftEl.textContent="—";waldEl.textContent="—";spdEl.textContent="—";spdrefEl.textContent="";pctMedianEl.textContent="—";pctMeanEl.textContent="—";pctValEl.textContent="—";pctNoteEl.textContent="";drawConv();drawHist();return;}
+    if(games===0){avgEl.textContent="—";pmEl.textContent="";leftEl.textContent="—";sdEl.textContent="—";ppsEl.textContent="—";sp1kEl.textContent="—";spdEl.textContent="—";spdrefEl.textContent="";pctMedianEl.textContent="—";pctMeanEl.textContent="—";pctValEl.textContent="—";pctNoteEl.textContent="";drawConv();drawHist();return;}
     var avg=totalSpins/games;
     var lo=totalLeftover/games;
     avgEl.textContent=avg.toFixed(2);
     leftEl.textContent=lo.toFixed(0);
-    waldEl.textContent=((start-lo)/BURN).toFixed(2);
-    // standard error of the mean
+    // unit economics
+    ppsEl.textContent="$"+(parseFloat(price)/avg).toFixed(3);
+    sp1kEl.textContent=(avg/(start/1000)).toFixed(2);
+    // standard deviation of sessions and 95% CI of the mean
     if(games>1){
       var variance=(totalSpinsSq - totalSpins*totalSpins/games)/(games-1);
+      sdEl.textContent=Math.sqrt(variance).toFixed(0);
       var se=Math.sqrt(variance/games);
-      pmEl.textContent="± "+(1.96*se).toFixed(2);
-    } else pmEl.textContent="";
+      pmEl.textContent="± "+(1.96*se).toFixed(2)+" (95% CI)";
+    } else { sdEl.textContent="—"; pmEl.textContent=""; }
     var spd=avg/parseFloat(price);
     spdEl.textContent=spd.toFixed(2)+" spins / $";
     if(price==='1.99'){ spdrefEl.textContent="reference rate"; }
@@ -502,9 +504,8 @@
       var c=histo[v]||0;
       var bh=(h-padT-padB)*(c/maxC);
       var x=padL+(v-lo)*bw, y=h-padB-bh;
-      var inBand=(v>=bandLo()&&v<=bandHi());
-      ctx.fillStyle=inBand?css("--win"):"#3a4250";
-      ctx.globalAlpha=inBand?.85:.9;
+      ctx.fillStyle="#3a4250";
+      ctx.globalAlpha=.9;
       ctx.fillRect(x+1,y,Math.max(1,bw-2),bh);
     }
     ctx.globalAlpha=1;
@@ -537,9 +538,7 @@
     ptagEl.textContent="$"+price+" · "+fmt(start);
     buyBtn.textContent="Buy "+fmt(start)+" coins · $"+price;
     hlpriceEl.textContent="$"+price;
-    boundEl.textContent=fmtBound();
-    naiveEl.textContent=Math.round(naiveEst())+" ✗";
-    waldsubEl.textContent="("+fmt(start)+" − E[B]) ÷ 150";
+    ppssubEl.textContent="$"+price+" ÷ avg spins";
   }
 
   // ---- reset ----
@@ -576,7 +575,11 @@
     if(games>0){ pctValEl.textContent=percentileSpins(sel); drawHist(); }
   });
   document.querySelectorAll(".auto-btns button").forEach(function(b){
-    b.addEventListener("click",function(){runMany(parseInt(b.getAttribute("data-n"),10));});
+    b.addEventListener("click",function(){
+      var n=parseInt(b.getAttribute("data-n"),10);
+      feedbackEl.textContent="Running "+fmt(n)+" sessions\u2026"; feedbackEl.className="feedback";
+      setTimeout(function(){ runMany(n); feedbackEl.textContent="Ran "+fmt(n)+" sessions."; },20);
+    });
   });
   window.addEventListener("resize",function(){drawConv();drawHist();});
   document.fonts && document.fonts.ready.then(function(){drawConv();drawHist();});
