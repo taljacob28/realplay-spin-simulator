@@ -151,6 +151,17 @@
     .sym.spinning{animation:none}
     *{transition:none !important}
   }
+  .ramp{margin-top:16px;border-top:1px solid var(--line);padding-top:16px}
+  .ramp-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .ramp-toggle{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12.5px;color:var(--ink);cursor:pointer}
+  .ramp-toggle input{accent-color:var(--brass);width:15px;height:15px;cursor:pointer}
+  .ramp-state{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  #rampSlider{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:3px;background:var(--line);outline:none;margin:2px 0}
+  #rampSlider:disabled{opacity:.4}
+  #rampSlider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;background:var(--brass);cursor:pointer}
+  #rampSlider::-moz-range-thumb{width:16px;height:16px;border:none;border-radius:50%;background:var(--brass);cursor:pointer}
+  .ramp-foot{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5}
+  .ramp-foot b{color:var(--brass)}
 </style>
 </head>
 <body>
@@ -205,6 +216,15 @@
           <button data-n="100000">Run 100,000</button>
         </div>
       </div>
+
+      <div class="ramp">
+        <div class="ramp-top">
+          <label class="ramp-toggle"><input type="checkbox" id="rampToggle"> Late-session stake ramp</label>
+          <span class="ramp-state" id="rampState">off</span>
+        </div>
+        <input type="range" id="rampSlider" min="0" max="6" value="2" step="0.5" disabled>
+        <div class="ramp-foot">Bet and payouts rise <b id="rampPct">2%</b> per spin after spin 40. The return to player holds, so this is the session lever, not the odds.</div>
+      </div>
     </section>
 
     <!-- ANALYTICS -->
@@ -227,12 +247,12 @@
       </div>
 
       <div class="stat-grid">
-        <div class="stat"><div class="k">Net burn / spin</div><div class="v">150</div><div class="sub">coins lost on average</div></div>
+        <div class="stat"><div class="k">Net burn / spin</div><div class="v" id="netburn">150</div><div class="sub">coins lost on average</div></div>
         <div class="stat"><div class="k">Avg leftover &nbsp;E[B]</div><div class="v" id="leftover">—</div><div class="sub">stranded at game end</div></div>
         <div class="stat"><div class="k">Std dev of spins</div><div class="v" id="sd">—</div><div class="sub">spread across sessions</div></div>
         <div class="stat"><div class="k">Below average</div><div class="v" id="belowavg">—</div><div class="sub">bust before the average session</div></div>
         <div class="stat"><div class="k">Price per spin</div><div class="v gold" id="pps">—</div><div class="sub" id="ppssub">$1.99 ÷ avg spins</div></div>
-        <div class="stat"><div class="k">Spins per 1,000 coins</div><div class="v" id="sp1k">—</div><div class="sub">ceiling 6.67</div></div>
+        <div class="stat"><div class="k">Mean − median gap</div><div class="v" id="gap">—</div><div class="sub">the right skew</div></div>
       </div>
 
       <div class="chart-block">
@@ -253,6 +273,12 @@
   var REF_SPD=8.88;                      // $1.99 reference spins per dollar (simulated)
   var SYMS=["★","◆","●","▲","✦","7"];
 
+  // ---- late-session stake ramp ----
+  var rampOn=false, RAMP_START=40, rampRate=1.02;
+  function betFor(s){ return (!rampOn || s<RAMP_START) ? COST : COST*Math.pow(rampRate, s-RAMP_START); }
+  function drawType(){ var r=Math.random(); return r<0.55?0:(r<0.90?1:2); }
+  function amountFor(t,bet){ return t===0?0:(t===1?1.5*bet:3.25*bet); }
+
   function naiveEst(){ return start/BURN; }        // assumes leftover 0 (upper bound)
   function bandLo(){ return (start-750)/BURN; }    // leftover at most 750
   function bandHi(){ return start/BURN; }          // leftover at least 0  (= naive)
@@ -267,7 +293,7 @@
   var $=function(id){return document.getElementById(id)};
   var balanceEl=$("balance"), feedbackEl=$("feedback"), spinBtn=$("spin"), buyBtn=$("buy"),
       curEl=$("curspins"), maxEl=$("maxspins"), avgEl=$("avg"), pmEl=$("pm"), gamesEl=$("games"),
-      leftEl=$("leftover"), sdEl=$("sd"), ppsEl=$("pps"), ppssubEl=$("ppssub"), sp1kEl=$("sp1k"),
+      leftEl=$("leftover"), sdEl=$("sd"), ppsEl=$("pps"), ppssubEl=$("ppssub"), gapEl=$("gap"), netburnEl=$("netburn"),
       belowavgEl=$("belowavg"),
       ptagEl=$("ptag"), hlpriceEl=$("hlprice"),
       coinsInEl=$("coinsIn"), spdEl=$("spd"), spdrefEl=$("spdref"),
@@ -287,8 +313,8 @@
   }
   // play a full funded session, no animation
   function playSession(){
-    var b=start, s=0;
-    while(b>=COST){ b-=COST; b+=drawOutcome(); s++; }
+    var b=start, s=0, c;
+    while(true){ c=betFor(s); if(b<c) break; b-=c; b+=amountFor(drawType(),c); s++; }
     return {spins:s, leftover:b};
   }
   function recordSession(spins,leftover){
@@ -300,18 +326,18 @@
 
   // ---- symbols consistent with an outcome ----
   function pick(){return SYMS[Math.floor(Math.random()*SYMS.length)];}
-  function symbolsFor(win){
-    if(win===3250){ var a=pick(); return [a,a,a]; }            // three of a kind
-    if(win===1500){                                            // exactly a pair
+  function symbolsFor(type){
+    if(type===2){ var a=pick(); return [a,a,a]; }              // three of a kind
+    if(type===1){                                              // exactly a pair
       var a=pick(), b=pick(); while(b===a) b=pick();
       var arr=[a,a,b], i=Math.floor(Math.random()*3), t=arr[2]; arr[2]=arr[i]; arr[i]=t; return arr;
     }
     while(true){ var x=pick(),y=pick(),z=pick(); if(!(x===y||y===z||x===z)) return [x,y,z]; } // all different
   }
-  function styleReels(win){
+  function styleReels(type){
     symEls.forEach(function(el){el.classList.remove("hit","jackpot","spinning");});
-    if(win===3250) symEls.forEach(function(el){el.classList.add("jackpot");});
-    else if(win===1500){ /* highlight the matching pair */
+    if(type===2) symEls.forEach(function(el){el.classList.add("jackpot");});
+    else if(type===1){ /* highlight the matching pair */
       var s=symEls.map(function(e){return e.textContent;});
       for(var i=0;i<3;i++){ if(s.filter(function(v){return v===s[i];}).length>1) symEls[i].classList.add("hit"); }
     }
@@ -319,28 +345,30 @@
 
   var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  function showOutcome(win){
-    var syms=symbolsFor(win);
+  function showOutcome(type,win){
+    var syms=symbolsFor(type);
     symEls.forEach(function(el,i){el.textContent=syms[i];});
-    styleReels(win);
-    if(win===3250){feedbackEl.textContent="Big win  +3,250"; feedbackEl.className="feedback jackpot";}
-    else if(win===1500){feedbackEl.textContent="Small win  +1,500"; feedbackEl.className="feedback win";}
+    styleReels(type);
+    if(type===2){feedbackEl.textContent="Big win  +"+fmt(Math.round(win)); feedbackEl.className="feedback jackpot";}
+    else if(type===1){feedbackEl.textContent="Small win  +"+fmt(Math.round(win)); feedbackEl.className="feedback win";}
     else{feedbackEl.textContent="No win"; feedbackEl.className="feedback";}
   }
 
   // ---- manual spin ----
   var spinning=false;
   function manualSpin(){
-    if(spinning||gameOver||bal<COST) return;
-    var win=drawOutcome();
-    bal-=COST; bal+=win; curSpins++;
+    var bet=betFor(curSpins);
+    if(spinning||gameOver||bal<bet) return;
+    var type=drawType(), win=amountFor(type,bet);
+    bal-=bet; bal+=win; curSpins++;
 
     function settle(){
       spinning=false;
-      balanceEl.textContent=fmt(bal);
+      balanceEl.textContent=fmt(Math.round(bal));
       curEl.textContent=curSpins;
-      showOutcome(win);
-      if(bal<COST){
+      showOutcome(type,win);
+      updateSpinCost();
+      if(bal<betFor(curSpins)){
         gameOver=true;
         recordSession(curSpins,bal);
         spinBtn.disabled=true; spinBtn.style.display="none"; buyBtn.style.display="block";
@@ -371,6 +399,11 @@
     buyBtn.style.display="none"; spinBtn.style.display="block"; spinBtn.disabled=false;
     feedbackEl.textContent=fmt(start)+" coins loaded. Spin away."; feedbackEl.className="feedback";
     symEls.forEach(function(el){el.classList.remove("hit","jackpot");});
+    updateSpinCost();
+  }
+  function updateSpinCost(){
+    var costSpan=spinBtn.querySelector(".cost");
+    if(costSpan) costSpan.textContent="−"+fmt(Math.round(betFor(curSpins)));
   }
 
   // ---- auto run ----
@@ -396,14 +429,14 @@
   function render(){
     gamesEl.textContent=fmt(games);
     maxEl.textContent=maxSpins;
-    if(games===0){avgEl.textContent="—";pmEl.textContent="";leftEl.textContent="—";sdEl.textContent="—";belowavgEl.textContent="—";ppsEl.textContent="—";sp1kEl.textContent="—";spdEl.textContent="—";spdrefEl.textContent="";pctMedianEl.textContent="—";pctMeanEl.textContent="—";pctValEl.textContent="—";pctNoteEl.textContent="";drawConv();drawHist();return;}
+    if(games===0){avgEl.textContent="—";pmEl.textContent="";leftEl.textContent="—";sdEl.textContent="—";belowavgEl.textContent="—";ppsEl.textContent="—";gapEl.textContent="—";netburnEl.textContent="150";spdEl.textContent="—";spdrefEl.textContent="";pctMedianEl.textContent="—";pctMeanEl.textContent="—";pctValEl.textContent="—";pctNoteEl.textContent="";drawConv();drawHist();return;}
     var avg=totalSpins/games;
     var lo=totalLeftover/games;
     avgEl.textContent=avg.toFixed(2);
     leftEl.textContent=lo.toFixed(0);
     // unit economics
     ppsEl.textContent="$"+(parseFloat(price)/avg).toFixed(3);
-    sp1kEl.textContent=(avg/(start/1000)).toFixed(2);
+    netburnEl.textContent=Math.round((start-lo)/avg);
     // share that busts before reaching the average (the right skew)
     belowavgEl.textContent=shareAtOrBelow(avg)+"%";
     // standard deviation of sessions and 95% CI of the mean
@@ -420,6 +453,7 @@
     // percentiles: median vs mean shows the right skew
     var med=percentileSpins(50);
     pctMedianEl.textContent=med;
+    gapEl.textContent=(avg-med).toFixed(1);
     pctMeanEl.textContent=avg.toFixed(0);
     var sel=parseInt(pctSliderEl.value,10);
     pctLabelEl.textContent="P"+sel;
@@ -586,6 +620,22 @@
       setTimeout(function(){ runMany(n); feedbackEl.textContent="Ran "+fmt(n)+" sessions."; },20);
     });
   });
+
+  // ---- stake ramp controls ----
+  var rampToggleEl=$("rampToggle"), rampSliderEl=$("rampSlider"), rampStateEl=$("rampState"), rampPctEl=$("rampPct");
+  function rampLabel(){ var p=parseFloat(rampSliderEl.value); rampPctEl.textContent=p+"%"; rampStateEl.textContent=rampOn?("on, +"+p+"%/spin"):"off"; }
+  function rampChanged(){
+    rampOn=rampToggleEl.checked;
+    rampRate=1+parseFloat(rampSliderEl.value)/100;
+    rampSliderEl.disabled=!rampOn;
+    rampLabel(); updateSpinCost(); resetAll();
+    feedbackEl.textContent="Running 10,000 sessions…"; feedbackEl.className="feedback";
+    setTimeout(function(){ runMany(10000); feedbackEl.textContent="Ran 10,000 sessions."; },20);
+  }
+  rampToggleEl.addEventListener("change",rampChanged);
+  rampSliderEl.addEventListener("input",rampLabel);
+  rampSliderEl.addEventListener("change",function(){ if(rampOn) rampChanged(); });
+
   window.addEventListener("resize",function(){drawConv();drawHist();});
   document.fonts && document.fonts.ready.then(function(){drawConv();drawHist();});
 
