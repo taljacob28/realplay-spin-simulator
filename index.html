@@ -162,6 +162,10 @@
   #rampSlider::-moz-range-thumb{width:16px;height:16px;border:none;border-radius:50%;background:var(--brass);cursor:pointer}
   .ramp-foot{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5}
   .ramp-foot b{color:var(--brass)}
+  .ramp-start-row{display:flex;align-items:center;gap:10px;margin-top:12px}
+  .ramp-start-row .lbl{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  #rampStart{background:var(--inset);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 9px;font-family:var(--mono);font-size:12px;cursor:pointer}
+  #rampStart:disabled{opacity:.4;cursor:default}
 </style>
 </head>
 <body>
@@ -223,7 +227,14 @@
           <span class="ramp-state" id="rampState">off</span>
         </div>
         <input type="range" id="rampSlider" min="0" max="6" value="2" step="0.5" disabled>
-        <div class="ramp-foot">Bet and payouts rise <b id="rampPct">2%</b> per spin after spin 40. The return to player holds, so this is the session lever, not the odds.</div>
+        <div class="ramp-start-row">
+          <span class="lbl">Ramp starts</span>
+          <select id="rampStart" disabled>
+            <option value="40">after a typical session (spin 40)</option>
+            <option value="0">from the first spin</option>
+          </select>
+        </div>
+        <div class="ramp-foot">Bet and payouts rise <b id="rampPct">2%</b> per spin <span id="rampWhen">after spin 40</span>. The return to player holds, so this is the session lever, not the odds.</div>
       </div>
     </section>
 
@@ -623,11 +634,17 @@
 
   // ---- stake ramp controls ----
   var rampToggleEl=$("rampToggle"), rampSliderEl=$("rampSlider"), rampStateEl=$("rampState"), rampPctEl=$("rampPct");
-  function rampLabel(){ var p=parseFloat(rampSliderEl.value); rampPctEl.textContent=p+"%"; rampStateEl.textContent=rampOn?("on, +"+p+"%/spin"):"off"; }
+  var rampStartEl=$("rampStart"), rampWhenEl=$("rampWhen");
+  function rampLabel(){
+    var p=parseFloat(rampSliderEl.value); rampPctEl.textContent=p+"%";
+    rampStateEl.textContent=rampOn?("on, +"+p+"%/spin"):"off";
+    rampWhenEl.textContent=(RAMP_START>0)?("after spin "+RAMP_START):"from the first spin";
+  }
   function rampChanged(){
     rampOn=rampToggleEl.checked;
     rampRate=1+parseFloat(rampSliderEl.value)/100;
-    rampSliderEl.disabled=!rampOn;
+    RAMP_START=parseInt(rampStartEl.value,10);
+    rampSliderEl.disabled=!rampOn; rampStartEl.disabled=!rampOn;
     rampLabel(); updateSpinCost(); resetAll();
     feedbackEl.textContent="Running 10,000 sessions…"; feedbackEl.className="feedback";
     setTimeout(function(){ runMany(10000); feedbackEl.textContent="Ran 10,000 sessions."; },20);
@@ -635,6 +652,7 @@
   rampToggleEl.addEventListener("change",rampChanged);
   rampSliderEl.addEventListener("input",rampLabel);
   rampSliderEl.addEventListener("change",function(){ if(rampOn) rampChanged(); });
+  rampStartEl.addEventListener("change",function(){ if(rampOn) rampChanged(); });
 
   window.addEventListener("resize",function(){drawConv();drawHist();});
   document.fonts && document.fonts.ready.then(function(){drawConv();drawHist();});
